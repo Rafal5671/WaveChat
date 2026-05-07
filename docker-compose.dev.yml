@@ -1,0 +1,34 @@
+version: "3.9"
+
+services:
+  postgres_auth:
+    image: postgres:16-alpine
+    container_name: wavechat_postgres_auth
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: auth_user
+      POSTGRES_PASSWORD: auth_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - auth_pg_data:/var/lib/postgresql/data
+    networks:
+      - wavechat_dev
+
+  redis:
+    image: redis:7-alpine
+    container_name: wavechat_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - wavechat_dev
+
+volumes:
+  auth_pg_data:
+  redis_data:
+
+networks:
+  wavechat_dev:
+    driver: bridge
