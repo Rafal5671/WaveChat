@@ -14,20 +14,12 @@ class ProfileSerializer(serializers.ModelSerializer):
             "display_name",
             "bio",
             "avatar_url",
-            "phone_number",
             "is_online",
             "last_seen",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = [
-            "id",
-            "phone_number",
-            "is_online",
-            "last_seen",
-            "created_at",
-            "updated_at",
-        ]
+        read_only_fields = ["id", "is_online", "last_seen", "created_at", "updated_at"]
 
 
 class PublicProfileSerializer(serializers.ModelSerializer):
@@ -51,7 +43,7 @@ class CreateProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Profile
-        fields = ["username", "display_name", "phone_number"]
+        fields = ["username", "display_name"]
 
     def validate_username(self, value):
         """Ensure username contains only allowed characters."""

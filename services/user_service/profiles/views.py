@@ -36,7 +36,6 @@ class CreateProfileView(APIView):
         serializer.is_valid(raise_exception=True)
         profile = serializer.save(
             id=request.user.id,
-            phone_number=request.user.phone_number,
         )
 
         return Response(

@@ -4,16 +4,18 @@ from django.conf import settings
 
 class SimpleUser:
     """
-    Lightweight user object injected into request.user.
+    Lightweight user object for WebSocket scope.
 
-    Does not correspond to any local database model — it carries
-    only the claims returned by auth_service token validation.
+    Injected into scope['user'] by JWTAuthMiddleware.
+    The pk attribute is required by DRF throttling.
     """
 
     def __init__(self, user_id: str, email: str, is_verified: bool):
         """Initialize user with claims from auth_service."""
         self.id = user_id
+        self.pk = user_id
         self.email = email
+        self.is_verified = is_verified
         self.is_authenticated = True
 
     def __str__(self):

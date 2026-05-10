@@ -16,7 +16,6 @@ class Profile(models.Model):
     display_name = models.CharField(max_length=100, blank=True)
     bio = models.TextField(max_length=500, blank=True)
     avatar_url = models.URLField(blank=True)
-    phone_number = models.CharField(max_length=20, unique=True)
     is_online = models.BooleanField(default=False)
     last_seen = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

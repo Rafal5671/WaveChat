@@ -10,12 +10,15 @@ class SimpleUser:
 
     Does not correspond to any local database model — it carries
     only the claims returned by auth_service token validation.
+    The pk attribute is required by DRF throttling.
     """
 
     def __init__(self, user_id: str, email: str, is_verified: bool):
         """Initialize user with claims from auth_service."""
         self.id = user_id
+        self.pk = user_id
         self.email = email
+        self.is_verified = is_verified
         self.is_authenticated = True
 
     def __str__(self):
