@@ -95,5 +95,10 @@ TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+# Email — Mailpit for local development
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = os.getenv("EMAIL_HOST", "localhost")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", 1025))
+EMAIL_USE_TLS = False
+EMAIL_USE_SSL = False
 DEFAULT_FROM_EMAIL = "noreply@wavechat.local"
