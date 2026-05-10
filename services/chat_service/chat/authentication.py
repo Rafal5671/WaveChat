@@ -8,18 +8,18 @@ class SimpleUser:
     """
     Lightweight user object injected into request.user.
 
-    Carries only the claims returned by auth_service — no local DB model.
+    Does not correspond to any local database model — it carries
+    only the claims returned by auth_service token validation.
     """
 
-    def __init__(self, user_id, phone_number, is_verified):
+    def __init__(self, user_id: str, email: str, is_verified: bool):
         """Initialize user with claims from auth_service."""
         self.id = user_id
-        self.phone_number = phone_number
-        self.is_verified = is_verified
+        self.email = email
         self.is_authenticated = True
 
     def __str__(self):
-        return self.phone_number
+        return self.email
 
 
 class JWTAuthentication(BaseAuthentication):
@@ -55,7 +55,7 @@ class JWTAuthentication(BaseAuthentication):
         data = response.json()
         user = SimpleUser(
             user_id=data["user_id"],
-            phone_number=data["phone_number"],
+            email=data["email"],
             is_verified=data["is_verified"],
         )
 

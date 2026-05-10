@@ -3,14 +3,10 @@ import { ref } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth.store";
 
-/**
- * Register view — sends OTP to phone number.
- * Redirects to /verify on success.
- */
 const router = useRouter();
 const authStore = useAuthStore();
 
-const phoneNumber = ref("");
+const email = ref("");
 const password = ref("");
 const error = ref<string | null>(null);
 const isLoading = ref(false);
@@ -18,15 +14,11 @@ const isLoading = ref(false);
 async function handleRegister() {
   error.value = null;
   isLoading.value = true;
-
   try {
-    await authStore.register(phoneNumber.value, password.value);
-    await router.push({
-      name: "verify",
-      query: { phone: phoneNumber.value },
-    });
+    await authStore.register(email.value, password.value);
+    await router.push({ name: "verify", query: { email: email.value } });
   } catch {
-    error.value = "Registration failed. Phone number may already be registered.";
+    error.value = "Registration failed. Email may already be registered.";
   } finally {
     isLoading.value = false;
   }
@@ -40,11 +32,11 @@ async function handleRegister() {
 
       <form @submit.prevent="handleRegister" class="flex flex-col gap-4">
         <div class="flex flex-col gap-1">
-          <label class="text-sm text-gray-500">Phone number</label>
+          <label class="text-sm text-gray-500">Email</label>
           <input
-            v-model="phoneNumber"
-            type="tel"
-            placeholder="+48123456789"
+            v-model="email"
+            type="email"
+            placeholder="you@example.com"
             required
             class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary-600"
           />

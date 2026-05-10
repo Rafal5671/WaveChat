@@ -2,7 +2,9 @@ import random
 import string
 from datetime import timedelta
 
+from django.conf import settings
 from django.core.cache import cache
+from django.core.mail import send_mail
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -10,12 +12,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import PhoneVerification, User
+from .models import EmailVerification, User
 from .serializers import (
     LoginSerializer,
     RegisterSerializer,
     UserInfoSerializer,
-    VerifyPhoneSerializer,
+    VerifyEmailSerializer,
 )
 
 
@@ -23,54 +25,58 @@ class RegisterView(APIView):
     """
     Handle new user registration.
 
-    Sends a 6-digit OTP to the provided phone number.
+    Sends a 6-digit OTP to the provided email address.
     Actual user account is created only after OTP verification.
     """
 
     permission_classes = [AllowAny]
 
     def post(self, request):
-        """Validate phone number and send OTP."""
+        """Validate email and password, then send OTP."""
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        phone = serializer.validated_data["phone_number"]
+        email = serializer.validated_data["email"]
 
-        if User.objects.filter(phone_number=phone).exists():
+        if User.objects.filter(email=email).exists():
             return Response(
-                {"error": "Phone number already registered."},
+                {"error": "Email already registered."},
                 status=status.HTTP_409_CONFLICT,
             )
 
         otp = "".join(random.choices(string.digits, k=6))
         expires_at = timezone.now() + timedelta(minutes=10)
 
-        # Invalidate any previous unused OTPs for this number
-        PhoneVerification.objects.filter(phone_number=phone, is_used=False).delete()
-        PhoneVerification.objects.create(
-            phone_number=phone,
+        EmailVerification.objects.filter(email=email, is_used=False).delete()
+        EmailVerification.objects.create(
+            email=email,
             code=otp,
             expires_at=expires_at,
         )
 
-        # Cache registration data for 10 minutes
         cache.set(
-            f"pending_reg:{phone}",
+            f"pending_reg:{email}",
             {"password": serializer.validated_data["password"]},
             timeout=600,
         )
 
-        # TODO: integrate SMS gateway (Twilio / AWS SNS)
-        print(f"[DEV] OTP for {phone}: {otp}")
+        # Send OTP via email — logs to console in development
+        send_mail(
+            subject="WaveChat — your verification code",
+            message=f"Your verification code is: {otp}\n\nIt expires in 10 minutes.",
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[email],
+            fail_silently=False,
+        )
 
         return Response(
-            {"message": "OTP sent to your phone number.", "phone_number": phone},
+            {"message": "OTP sent to your email address.", "email": email},
             status=status.HTTP_201_CREATED,
         )
 
 
-class VerifyPhoneView(APIView):
+class VerifyEmailView(APIView):
     """
-    Verify phone number with OTP and complete registration.
+    Verify email address with OTP and complete registration.
 
     Returns JWT access and refresh tokens on success.
     """
@@ -79,14 +85,14 @@ class VerifyPhoneView(APIView):
 
     def post(self, request):
         """Verify OTP, create user account and return JWT tokens."""
-        serializer = VerifyPhoneSerializer(data=request.data)
+        serializer = VerifyEmailSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        phone = serializer.validated_data["phone_number"]
+        email = serializer.validated_data["email"]
         code = serializer.validated_data["code"]
 
-        verification = PhoneVerification.objects.filter(
-            phone_number=phone,
+        verification = EmailVerification.objects.filter(
+            email=email,
             code=code,
             is_used=False,
             expires_at__gt=timezone.now(),
@@ -98,7 +104,7 @@ class VerifyPhoneView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        pending = cache.get(f"pending_reg:{phone}")
+        pending = cache.get(f"pending_reg:{email}")
         if not pending:
             return Response(
                 {"error": "Registration session expired. Please register again."},
@@ -106,14 +112,14 @@ class VerifyPhoneView(APIView):
             )
 
         user = User.objects.create_user(
-            phone_number=phone,
+            email=email,
             password=pending["password"],
             is_verified=True,
         )
 
         verification.is_used = True
         verification.save()
-        cache.delete(f"pending_reg:{phone}")
+        cache.delete(f"pending_reg:{email}")
 
         refresh = RefreshToken.for_user(user)
         return Response(
@@ -128,7 +134,7 @@ class VerifyPhoneView(APIView):
 
 class LoginView(APIView):
     """
-    Authenticate user with phone number and password.
+    Authenticate user with email and password.
 
     Includes brute-force protection via Redis — account is locked
     for 15 minutes after 5 failed attempts.
@@ -141,10 +147,10 @@ class LoginView(APIView):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        phone = serializer.validated_data["phone_number"]
+        email = serializer.validated_data["email"]
         password = serializer.validated_data["password"]
 
-        attempts_key = f"login_attempts:{phone}"
+        attempts_key = f"login_attempts:{email}"
         attempts = cache.get(attempts_key, 0)
 
         if attempts >= 5:
@@ -154,7 +160,7 @@ class LoginView(APIView):
             )
 
         try:
-            user = User.objects.get(phone_number=phone, is_active=True)
+            user = User.objects.get(email=email, is_active=True)
         except User.DoesNotExist:
             cache.set(attempts_key, attempts + 1, timeout=900)
             return Response(
@@ -224,7 +230,7 @@ class ValidateTokenView(APIView):
             {
                 "valid": True,
                 "user_id": str(request.user.id),
-                "phone_number": request.user.phone_number,
+                "email": request.user.email,
                 "is_verified": request.user.is_verified,
             }
         )

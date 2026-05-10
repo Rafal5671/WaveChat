@@ -6,38 +6,26 @@ import type { AuthTokens } from "@/types";
  */
 export const authService = {
   /**
-   * Send OTP to the provided phone number.
+   * Send OTP to the provided email address.
    */
-  async register(
-    phoneNumber: string,
-    password: string,
-  ): Promise<{ message: string; phone_number: string }> {
-    const { data } = await api.post("/api/auth/register/", {
-      phone_number: phoneNumber,
-      password,
-    });
+  async register(email: string, password: string): Promise<{ message: string; email: string }> {
+    const { data } = await api.post("/api/auth/register/", { email, password });
     return data;
   },
 
   /**
    * Verify OTP and complete registration. Returns JWT tokens.
    */
-  async verifyPhone(phoneNumber: string, code: string): Promise<AuthTokens> {
-    const { data } = await api.post("/api/auth/verify-phone/", {
-      phone_number: phoneNumber,
-      code,
-    });
+  async verifyEmail(email: string, code: string): Promise<AuthTokens> {
+    const { data } = await api.post("/api/auth/verify-email/", { email, code });
     return data;
   },
 
   /**
-   * Login with phone number and password. Returns JWT tokens.
+   * Login with email and password. Returns JWT tokens.
    */
-  async login(phoneNumber: string, password: string): Promise<AuthTokens> {
-    const { data } = await api.post("/api/auth/login/", {
-      phone_number: phoneNumber,
-      password,
-    });
+  async login(email: string, password: string): Promise<AuthTokens> {
+    const { data } = await api.post("/api/auth/login/", { email, password });
     return data;
   },
 

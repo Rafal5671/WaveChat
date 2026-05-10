@@ -3,14 +3,10 @@ import { ref } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth.store";
 
-/**
- * Login view — authenticates user with phone number and password.
- * Redirects to /chat on success.
- */
 const router = useRouter();
 const authStore = useAuthStore();
 
-const phoneNumber = ref("");
+const email = ref("");
 const password = ref("");
 const error = ref<string | null>(null);
 const isLoading = ref(false);
@@ -18,12 +14,11 @@ const isLoading = ref(false);
 async function handleLogin() {
   error.value = null;
   isLoading.value = true;
-
   try {
-    await authStore.login(phoneNumber.value, password.value);
+    await authStore.login(email.value, password.value);
     await router.push({ name: "chat" });
   } catch {
-    error.value = "Invalid phone number or password.";
+    error.value = "Invalid email or password.";
   } finally {
     isLoading.value = false;
   }
@@ -37,11 +32,11 @@ async function handleLogin() {
 
       <form @submit.prevent="handleLogin" class="flex flex-col gap-4">
         <div class="flex flex-col gap-1">
-          <label class="text-sm text-gray-500">Phone number</label>
+          <label class="text-sm text-gray-500">Email</label>
           <input
-            v-model="phoneNumber"
-            type="tel"
-            placeholder="+48123456789"
+            v-model="email"
+            type="email"
+            placeholder="you@example.com"
             required
             class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary-600"
           />

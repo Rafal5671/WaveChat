@@ -4,16 +4,12 @@ import { useRouter, useRoute } from "vue-router";
 import { useAuthStore } from "@/stores/auth.store";
 import { useUserStore } from "@/stores/user.store";
 
-/**
- * OTP verification view — completes registration and creates user profile.
- * Redirects to /chat on success.
- */
 const router = useRouter();
 const route = useRoute();
 const authStore = useAuthStore();
 const userStore = useUserStore();
 
-const phoneNumber = route.query.phone as string;
+const email = route.query.email as string;
 const code = ref("");
 const username = ref("");
 const displayName = ref("");
@@ -23,9 +19,8 @@ const isLoading = ref(false);
 async function handleVerify() {
   error.value = null;
   isLoading.value = true;
-
   try {
-    await authStore.verifyPhone(phoneNumber, code.value);
+    await authStore.verifyEmail(email, code.value);
     await userStore.createProfile(username.value, displayName.value);
     await router.push({ name: "chat" });
   } catch {
@@ -39,8 +34,8 @@ async function handleVerify() {
 <template>
   <div class="min-h-screen flex items-center justify-center bg-gray-50">
     <div class="w-full max-w-sm bg-white rounded-2xl border border-gray-200 p-8">
-      <h1 class="text-xl font-medium text-gray-900 mb-2">Verify your number</h1>
-      <p class="text-sm text-gray-500 mb-6">Enter the code sent to {{ phoneNumber }}</p>
+      <h1 class="text-xl font-medium text-gray-900 mb-2">Verify your email</h1>
+      <p class="text-sm text-gray-500 mb-6">Enter the code sent to {{ email }}</p>
 
       <form @submit.prevent="handleVerify" class="flex flex-col gap-4">
         <div class="flex flex-col gap-1">

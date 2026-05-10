@@ -8,7 +8,7 @@ export interface AuthTokens {
 
 export interface TokenPayload {
   user_id: string;
-  phone_number: string;
+  email: string;
   is_verified: boolean;
   exp: number;
 }

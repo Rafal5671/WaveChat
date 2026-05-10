@@ -23,16 +23,16 @@ export const useAuthStore = defineStore("auth", () => {
   /**
    * Verify OTP, save tokens and update store state.
    */
-  async function verifyPhone(phoneNumber: string, code: string) {
-    const tokens: AuthTokens = await authService.verifyPhone(phoneNumber, code);
+  async function verifyEmail(email: string, code: string) {
+    const tokens: AuthTokens = await authService.verifyEmail(email, code);
     _applyTokens(tokens);
   }
 
   /**
-   * Login with phone and password, save tokens and update store state.
+   * Login with email and password, save tokens and update store state.
    */
-  async function login(phoneNumber: string, password: string) {
-    const tokens: AuthTokens = await authService.login(phoneNumber, password);
+  async function login(email: string, password: string) {
+    const tokens: AuthTokens = await authService.login(email, password);
     _applyTokens(tokens);
   }
 
