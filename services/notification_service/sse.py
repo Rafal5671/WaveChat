@@ -4,7 +4,7 @@ import os
 
 import redis.asyncio as aioredis
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -65,7 +65,8 @@ async def _event_generator(user_id: str):
     try:
         while True:
             message = await pubsub.get_message(
-                ignore_subscribe_messages=True, timeout=30
+                ignore_subscribe_messages=True,
+                timeout=30,
             )
 
             if message and message["type"] == "message":
@@ -74,7 +75,6 @@ async def _event_generator(user_id: str):
                     data = data.decode()
                 yield f"data: {data}\n\n"
             else:
-                # Keepalive ping
                 yield ": ping\n\n"
 
             await asyncio.sleep(0.1)
@@ -85,18 +85,28 @@ async def _event_generator(user_id: str):
 
 
 @app.get("/api/notifications/stream/")
-async def notification_stream(authorization: str = Header(...)):
+async def notification_stream(
+    authorization: str | None = Header(default=None),
+    token: str | None = Query(default=None),
+):
     """
     SSE endpoint for browser notifications.
 
-    Connect with: EventSource('/api/notifications/stream/', { headers: { Authorization: 'Bearer <token>' } })
+    Accepts token via Authorization header or ?token= query parameter,
+    since EventSource API does not support custom headers natively.
     Each event is a JSON object with type, title, body and data fields.
     """
-    if not authorization.startswith("Bearer "):
+    bearer_token = None
+
+    if authorization and authorization.startswith("Bearer "):
+        bearer_token = authorization[7:]
+    elif token:
+        bearer_token = token
+
+    if not bearer_token:
         raise HTTPException(status_code=401, detail="Bearer token required.")
 
-    token = authorization[7:]
-    user_id = await _validate_token(token)
+    user_id = await _validate_token(bearer_token)
 
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid or expired token.")

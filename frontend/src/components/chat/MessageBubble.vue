@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Message } from "@/types";
+import type { Message, PublicProfile } from "@/types";
 
 /**
  * Single message bubble component.
@@ -8,6 +8,7 @@ import type { Message } from "@/types";
 const props = defineProps<{
   message: Message;
   isOwn: boolean;
+  senderProfile?: PublicProfile | null;
 }>();
 
 function formatTime(dateStr: string): string {
@@ -16,15 +17,34 @@ function formatTime(dateStr: string): string {
     minute: "2-digit",
   });
 }
+
+function getInitials(name: string): string {
+  return name
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+}
 </script>
 
 <template>
   <div class="flex items-end gap-2" :class="isOwn ? 'flex-row-reverse' : 'flex-row'">
     <div
       v-if="!isOwn"
-      class="w-7 h-7 rounded-full bg-primary-100 flex items-center justify-center text-primary-800 text-xs font-medium flex-shrink-0"
+      class="w-7 h-7 rounded-full bg-primary-100 flex items-center justify-center text-primary-800 text-xs font-medium flex-shrink-0 overflow-hidden"
     >
-      ?
+      <img
+        v-if="senderProfile?.avatar_url"
+        :src="senderProfile.avatar_url"
+        :alt="senderProfile.username"
+        class="w-full h-full object-cover"
+      />
+      <span v-else>
+        {{
+          senderProfile ? getInitials(senderProfile.display_name || senderProfile.username) : "?"
+        }}
+      </span>
     </div>
 
     <div class="max-w-[62%]">

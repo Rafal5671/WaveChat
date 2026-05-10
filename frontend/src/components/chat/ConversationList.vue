@@ -1,21 +1,61 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useChatStore } from "@/stores/chat.store";
 import { useAuthStore } from "@/stores/auth.store";
-import type { Conversation } from "@/types";
+import { useUserStore } from "@/stores/user.store";
+import NewConversationModal from "@/components/chat/NewConversationModal.vue";
+import type { Conversation, PublicProfile } from "@/types";
 
 /**
  * Left panel showing list of conversations with search.
+ * Resolves participant names from user_service.
  */
 const router = useRouter();
 const chatStore = useChatStore();
 const authStore = useAuthStore();
+const userStore = useUserStore();
 
 const search = ref("");
+const showNewConversation = ref(false);
+const participantProfiles = ref<Map<string, PublicProfile>>(new Map());
+
+watch(
+  () => chatStore.conversations,
+  async (conversations) => {
+    if (conversations.length === 0) return;
+    await fetchParticipantProfiles();
+  },
+  { immediate: true, deep: true },
+);
+
+async function fetchParticipantProfiles() {
+  const userIds = new Set<string>();
+
+  for (const conv of chatStore.conversations) {
+    for (const p of conv.participants) {
+      if (p.user_id !== authStore.userId) {
+        userIds.add(p.user_id);
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from(userIds).map(async (id) => {
+      try {
+        const profile = await userStore.getPublicProfile(id);
+        participantProfiles.value.set(id, profile);
+      } catch {
+        // profile not found — keep user_id as fallback
+      }
+    }),
+  );
+}
 
 const filtered = computed(() =>
-  chatStore.conversations.filter((c) => c.name.toLowerCase().includes(search.value.toLowerCase())),
+  chatStore.conversations.filter((c) =>
+    getConversationName(c).toLowerCase().includes(search.value.toLowerCase()),
+  ),
 );
 
 function selectConversation(conversation: Conversation) {
@@ -26,7 +66,9 @@ function selectConversation(conversation: Conversation) {
 function getConversationName(conversation: Conversation): string {
   if (conversation.type === "group") return conversation.name;
   const other = conversation.participants.find((p) => p.user_id !== authStore.userId);
-  return other?.user_id ?? "Unknown";
+  if (!other) return "Unknown";
+  const profile = participantProfiles.value.get(other.user_id);
+  return profile?.display_name || profile?.username || other.user_id;
 }
 
 function getInitials(name: string): string {
@@ -54,7 +96,26 @@ function formatTime(dateStr: string | null | undefined): string {
 <template>
   <aside class="w-[300px] flex flex-col border-r border-gray-100 flex-shrink-0">
     <div class="p-4 border-b border-gray-100">
-      <h2 class="text-base font-medium text-gray-900 mb-3">Messages</h2>
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-base font-medium text-gray-900">Messages</h2>
+        <button
+          @click="showNewConversation = true"
+          class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 transition-colors"
+          aria-label="New conversation"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="w-5 h-5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+        </button>
+      </div>
+
       <div class="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -116,5 +177,7 @@ function formatTime(dateStr: string | null | undefined): string {
         No conversations found.
       </p>
     </div>
+
+    <NewConversationModal v-if="showNewConversation" @close="showNewConversation = false" />
   </aside>
 </template>

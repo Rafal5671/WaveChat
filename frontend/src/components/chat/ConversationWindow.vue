@@ -2,12 +2,15 @@
 import { ref, watch, nextTick } from "vue";
 import { useChatStore } from "@/stores/chat.store";
 import { useAuthStore } from "@/stores/auth.store";
+import { useUserStore } from "@/stores/user.store";
 import { useWebSocket } from "@/composables/useWebSocket";
 import { useFileUpload } from "@/composables/useFileUpload";
 import MessageBubble from "@/components/chat/MessageBubble.vue";
+import type { Message, PublicProfile } from "@/types";
 
 /**
  * Main chat window showing messages and input for the active conversation.
+ * Resolves the other participant's profile and sender profiles from user_service.
  */
 const props = defineProps<{
   conversationId: string | null;
@@ -15,14 +18,18 @@ const props = defineProps<{
 
 const chatStore = useChatStore();
 const authStore = useAuthStore();
+const userStore = useUserStore();
 const { upload, isUploading } = useFileUpload();
 
 const messageText = ref("");
 const messagesEndRef = ref<HTMLDivElement | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
+const otherProfile = ref<PublicProfile | null>(null);
+const senderProfiles = ref<Map<string, PublicProfile>>(new Map());
 
 let ws: ReturnType<typeof useWebSocket> | null = null;
 
+// Watch for conversation ID change — connect WebSocket and fetch messages
 watch(
   () => props.conversationId,
   async (id) => {
@@ -38,11 +45,58 @@ watch(
   { immediate: true },
 );
 
+// Watch for conversation data — resolve other participant's profile
+watch(
+  () => {
+    if (!props.conversationId) return null;
+    return chatStore.conversations.find((c) => c.id === props.conversationId) ?? null;
+  },
+  async (conversation) => {
+    if (!conversation || conversation.type !== "direct") return;
+
+    const currentUserId = authStore.userId;
+    const other = conversation.participants.find((p) =>
+      currentUserId ? p.user_id !== currentUserId : p.user_id !== conversation.created_by,
+    );
+
+    if (!other) return;
+
+    try {
+      otherProfile.value = await userStore.getPublicProfile(other.user_id);
+    } catch {
+      otherProfile.value = null;
+    }
+  },
+  { immediate: true, deep: true },
+);
+
+// Watch for messages — resolve sender profiles and scroll to bottom
 watch(
   () => chatStore.getMessages(props.conversationId ?? ""),
-  () => nextTick(scrollToBottom),
+  async (messages) => {
+    await resolveSenderProfiles(messages);
+    nextTick(scrollToBottom);
+  },
   { deep: true },
 );
+
+async function resolveSenderProfiles(messages: Message[]) {
+  const ids = new Set(
+    messages.filter((m) => m.sender_id !== authStore.userId).map((m) => m.sender_id),
+  );
+
+  await Promise.all(
+    Array.from(ids).map(async (id) => {
+      if (senderProfiles.value.has(id)) return;
+      try {
+        const profile = await userStore.getPublicProfile(id);
+        senderProfiles.value.set(id, profile);
+      } catch {
+        // fallback — avatar will show '?'
+      }
+    }),
+  );
+}
 
 function scrollToBottom() {
   messagesEndRef.value?.scrollIntoView({ behavior: "smooth" });
@@ -83,6 +137,15 @@ async function handleFileSelect(event: Event) {
   input.value = "";
 }
 
+function getInitials(name: string): string {
+  return name
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+}
+
 const typingUsers = () =>
   props.conversationId ? chatStore.getTypingUsers(props.conversationId) : [];
 </script>
@@ -92,14 +155,28 @@ const typingUsers = () =>
     <template v-if="conversationId">
       <div class="flex items-center gap-3 px-4 py-3 border-b border-gray-100">
         <div
-          class="w-9 h-9 rounded-full bg-primary-100 flex items-center justify-center text-primary-800 text-xs font-medium"
+          class="w-9 h-9 rounded-full bg-primary-100 flex items-center justify-center text-primary-800 text-xs font-medium overflow-hidden flex-shrink-0"
         >
-          WC
+          <img
+            v-if="otherProfile?.avatar_url"
+            :src="otherProfile.avatar_url"
+            alt="avatar"
+            class="w-full h-full object-cover"
+          />
+          <span v-else>
+            {{
+              otherProfile ? getInitials(otherProfile.display_name || otherProfile.username) : "?"
+            }}
+          </span>
         </div>
+
         <div>
-          <p class="text-sm font-medium text-gray-900">Conversation</p>
+          <p class="text-sm font-medium text-gray-900">
+            {{ otherProfile?.display_name || otherProfile?.username || "Conversation" }}
+          </p>
           <p v-if="typingUsers().length > 0" class="text-xs text-primary-600">typing...</p>
-          <p v-else class="text-xs text-green-500">online</p>
+          <p v-else-if="otherProfile?.is_online" class="text-xs text-green-500">online</p>
+          <p v-else class="text-xs text-gray-400">offline</p>
         </div>
       </div>
 
@@ -109,6 +186,7 @@ const typingUsers = () =>
           :key="message.id"
           :message="message"
           :is-own="message.sender_id === authStore.userId"
+          :sender-profile="senderProfiles.get(message.sender_id) ?? null"
         />
         <div ref="messagesEndRef" />
       </div>
