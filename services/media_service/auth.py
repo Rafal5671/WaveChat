@@ -16,10 +16,10 @@ class SimpleUser:
     Carries only the claims needed by media_service.
     """
 
-    def __init__(self, user_id: str, phone_number: str, is_verified: bool):
+    def __init__(self, user_id: str, email: str, is_verified: bool):
         """Initialize user with claims from auth_service."""
         self.id = user_id
-        self.phone_number = phone_number
+        self.email = email
         self.is_verified = is_verified
 
 
@@ -59,6 +59,6 @@ def get_current_user(
     data = response.json()
     return SimpleUser(
         user_id=data["user_id"],
-        phone_number=data["phone_number"],
+        email=data["email"],
         is_verified=data["is_verified"],
     )

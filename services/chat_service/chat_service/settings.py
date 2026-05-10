@@ -79,3 +79,4 @@ LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
+USER_SERVICE_URL = os.getenv("USER_SERVICE_URL", "http://localhost:8002")

@@ -1,11 +1,13 @@
 import json
 import uuid
 
+import requests
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
+from django.conf import settings
 from django.utils import timezone
 
-from .models import Conversation, ConversationParticipant, Message
+from .models import ConversationParticipant, Message
 from .serializers import MessageSerializer
 
 
@@ -37,6 +39,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return
 
         self.user_id = str(user.id)
+        self.token = self._extract_token()
         self.conversation_id = self.scope["url_route"]["kwargs"]["conversation_id"]
         self.room_group = f"chat_{self.conversation_id}"
 
@@ -47,6 +50,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         await self.channel_layer.group_add(self.room_group, self.channel_name)
         await self.accept()
+        await self._update_online_status(True)
 
         messages = await self._get_recent_messages()
         await self.send(
@@ -58,16 +62,20 @@ class ChatConsumer(AsyncWebsocketConsumer):
             )
         )
 
-    async def disconnect(self, close_code):
+    async def disconnect(self, code):
         """Leave channel group and update last seen timestamp."""
         if hasattr(self, "room_group"):
             await self.channel_layer.group_discard(self.room_group, self.channel_name)
 
         if hasattr(self, "conversation_id") and hasattr(self, "user_id"):
             await self._update_last_seen()
+            await self._update_online_status(False)
 
-    async def receive(self, text_data):
+    async def receive(self, text_data=None, bytes_data=None):
         """Route incoming WebSocket messages to appropriate handlers."""
+        if not text_data:
+            return
+
         try:
             data = json.loads(text_data)
         except json.JSONDecodeError:
@@ -201,6 +209,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
             )
         )
 
+    def _extract_token(self):
+        """Extract JWT from WebSocket query string."""
+        query_string = self.scope.get("query_string", b"").decode()
+        for param in query_string.split("&"):
+            if param.startswith("token="):
+                return param.split("=", 1)[1]
+        return ""
+
     # ── Database helpers ──────────────────────────────────────
 
     @database_sync_to_async
@@ -248,3 +264,26 @@ class ChatConsumer(AsyncWebsocketConsumer):
             conversation_id=self.conversation_id,
             user_id=self.user_id,
         ).update(last_seen=timezone.now())
+
+    async def _update_online_status(self, is_online: bool):
+        """
+        Notify user_service about online status change.
+
+        Called on WebSocket connect (is_online=True) and
+        disconnect (is_online=False). Uses async HTTP to avoid
+        blocking the event loop.
+        """
+        if not hasattr(self, "token") or not self.token:
+            return
+        try:
+            import httpx
+
+            async with httpx.AsyncClient() as client:
+                await client.post(
+                    f"{settings.USER_SERVICE_URL}/api/users/status/",
+                    json={"is_online": is_online},
+                    headers={"Authorization": f"Bearer {self.token}"},
+                    timeout=2,
+                )
+        except Exception:
+            pass

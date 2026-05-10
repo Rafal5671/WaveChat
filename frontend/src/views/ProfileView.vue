@@ -135,10 +135,6 @@ function getInitials(name: string): string {
           <span class="text-xs text-gray-400">Bio</span>
           <span class="text-sm text-gray-900">{{ userStore.ownProfile?.bio || "—" }}</span>
         </div>
-        <div class="flex flex-col gap-1">
-          <span class="text-xs text-gray-400">Phone number</span>
-          <span class="text-sm text-gray-900">{{ userStore.ownProfile?.phone_number }}</span>
-        </div>
 
         <p v-if="success" class="text-sm text-green-500">Profile updated successfully.</p>
 

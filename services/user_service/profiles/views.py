@@ -1,5 +1,6 @@
 from django.core.cache import cache
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -213,3 +214,24 @@ class BlockUserView(APIView):
         contact.save()
 
         return Response({"message": "User unblocked successfully."})
+
+
+class UpdateOnlineStatusView(APIView):
+    """
+    Internal endpoint called by chat_service to update user online status.
+    Should not be exposed publicly through API Gateway.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        """Update is_online and last_seen for the current user."""
+        is_online = request.data.get("is_online", False)
+
+        profile = get_object_or_404(Profile, id=request.user.id)
+        profile.is_online = is_online
+        if not is_online:
+            profile.last_seen = timezone.now()
+        profile.save(update_fields=["is_online", "last_seen", "updated_at"])
+
+        return Response({"is_online": profile.is_online})

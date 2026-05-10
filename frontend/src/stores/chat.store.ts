@@ -43,6 +43,7 @@ export const useChatStore = defineStore("chat", () => {
    */
   function appendMessage(conversationId: string, message: Message): void {
     const existing = messages.value.get(conversationId) ?? [];
+    if (existing.some((m) => m.id === message.id)) return;
     messages.value.set(conversationId, [...existing, message]);
     _bumpConversation(conversationId, message);
   }

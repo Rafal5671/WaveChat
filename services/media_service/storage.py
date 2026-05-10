@@ -11,6 +11,7 @@ MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
 MINIO_BUCKET = os.getenv("MINIO_BUCKET", "wavechat-media")
 MINIO_USE_SSL = os.getenv("MINIO_USE_SSL", "False") == "True"
+MINIO_PUBLIC_BASE = os.getenv("MINIO_PUBLIC_BASE", "http://localhost/minio")
 
 ALLOWED_MIME_TYPES = {
     "image": ["image/jpeg", "image/png", "image/gif", "image/webp"],
@@ -65,6 +66,7 @@ def upload_file(
 
     Generates a thumbnail for image uploads.
     Returns a dict with url, thumbnail_url, object_key and file_id.
+    URL is built through Nginx proxy instead of direct MinIO endpoint.
     """
     s3 = get_s3_client()
     ensure_bucket_exists(s3)
@@ -80,11 +82,7 @@ def upload_file(
         ContentType=mime_type,
     )
 
-    url = s3.generate_presigned_url(
-        "get_object",
-        Params={"Bucket": MINIO_BUCKET, "Key": object_key},
-        ExpiresIn=365 * 24 * 3600,
-    )
+    url = f"{MINIO_PUBLIC_BASE}/{MINIO_BUCKET}/{object_key}"
 
     thumbnail_url = None
     if media_type == "image":
@@ -108,7 +106,8 @@ def _generate_thumbnail(
     """
     Generate a resized thumbnail and upload it to MinIO.
 
-    Returns the presigned URL of the thumbnail or None on failure.
+    Returns the public URL of the thumbnail through Nginx proxy,
+    or None on failure.
     """
     try:
         img = Image.open(io.BytesIO(file_bytes))
@@ -126,10 +125,7 @@ def _generate_thumbnail(
             ContentType="image/jpeg",
         )
 
-        return s3.generate_presigned_url(
-            "get_object",
-            Params={"Bucket": MINIO_BUCKET, "Key": thumb_key},
-            ExpiresIn=365 * 24 * 3600,
-        )
+        return f"{MINIO_PUBLIC_BASE}/{MINIO_BUCKET}/{thumb_key}"
+
     except Exception:
         return None

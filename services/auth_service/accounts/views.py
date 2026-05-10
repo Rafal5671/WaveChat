@@ -194,15 +194,20 @@ class LogoutView(APIView):
 
     def post(self, request):
         """Blacklist refresh token."""
-        try:
-            token = RefreshToken(request.data["refresh"])
-            token.blacklist()
+        refresh_token = request.data.get("refresh")
+
+        if not refresh_token:
+            # No token provided — just clear client side
             return Response({"message": "Logged out successfully."})
+
+        try:
+            token = RefreshToken(refresh_token)
+            token.blacklist()
         except Exception:
-            return Response(
-                {"error": "Invalid token."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            # Token already blacklisted or invalid — still return success
+            pass
+
+        return Response({"message": "Logged out successfully."})
 
 
 class MeView(APIView):

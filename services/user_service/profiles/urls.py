@@ -8,6 +8,7 @@ from .views import (
     OwnProfileView,
     PublicProfileView,
     SearchProfilesView,
+    UpdateOnlineStatusView,
 )
 
 urlpatterns = [
@@ -22,4 +23,5 @@ urlpatterns = [
         name="contact-detail",
     ),
     path("contacts/block/<uuid:user_id>/", BlockUserView.as_view(), name="block-user"),
+    path("status/", UpdateOnlineStatusView.as_view(), name="update-status"),
 ]
