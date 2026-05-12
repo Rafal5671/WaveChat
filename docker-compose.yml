@@ -1,0 +1,279 @@
+version: "3.9"
+
+services:
+  # ─── Infrastructure ──────────────────────────────────────────
+
+  postgres_auth:
+    image: postgres:16-alpine
+    container_name: wavechat_postgres_auth
+    environment:
+      POSTGRES_DB: ${AUTH_POSTGRES_DB}
+      POSTGRES_USER: ${AUTH_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${AUTH_POSTGRES_PASSWORD}
+    volumes:
+      - auth_pg_data:/var/lib/postgresql/data
+    networks:
+      - wavechat_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${AUTH_POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres_user:
+    image: postgres:16-alpine
+    container_name: wavechat_postgres_user
+    environment:
+      POSTGRES_DB: ${USER_POSTGRES_DB}
+      POSTGRES_USER: ${USER_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${USER_POSTGRES_PASSWORD}
+    volumes:
+      - user_pg_data:/var/lib/postgresql/data
+    networks:
+      - wavechat_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${USER_POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres_chat:
+    image: postgres:16-alpine
+    container_name: wavechat_postgres_chat
+    environment:
+      POSTGRES_DB: ${CHAT_POSTGRES_DB}
+      POSTGRES_USER: ${CHAT_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${CHAT_POSTGRES_PASSWORD}
+    volumes:
+      - chat_pg_data:/var/lib/postgresql/data
+    networks:
+      - wavechat_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CHAT_POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: wavechat_redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - wavechat_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio
+    container_name: wavechat_minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    networks:
+      - wavechat_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  minio_init:
+    image: minio/mc
+    container_name: wavechat_minio_init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
+      mc mb --ignore-existing local/${MINIO_BUCKET};
+      mc anonymous set download local/${MINIO_BUCKET};
+      exit 0;
+      "
+    networks:
+      - wavechat_net
+
+  # ─── Application services ────────────────────────────────────
+
+  auth_service:
+    build: ./services/auth_service
+    container_name: wavechat_auth
+    environment:
+      SECRET_KEY: ${SECRET_KEY}
+      DEBUG: "False"
+      POSTGRES_DB: ${AUTH_POSTGRES_DB}
+      POSTGRES_USER: ${AUTH_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${AUTH_POSTGRES_PASSWORD}
+      POSTGRES_HOST: postgres_auth
+      POSTGRES_PORT: "5432"
+      REDIS_URL: redis://redis:6379/0
+      EMAIL_HOST: ${EMAIL_HOST}
+      EMAIL_PORT: ${EMAIL_PORT}
+      JWT_ACCESS_EXPIRE_MINUTES: ${JWT_ACCESS_EXPIRE_MINUTES}
+      JWT_REFRESH_EXPIRE_DAYS: ${JWT_REFRESH_EXPIRE_DAYS}
+    depends_on:
+      postgres_auth:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - wavechat_net
+    restart: unless-stopped
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py runserver 0.0.0.0:8000"
+
+  user_service:
+    build: ./services/user_service
+    container_name: wavechat_user
+    environment:
+      SECRET_KEY: ${SECRET_KEY}
+      DEBUG: "False"
+      POSTGRES_DB: ${USER_POSTGRES_DB}
+      POSTGRES_USER: ${USER_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${USER_POSTGRES_PASSWORD}
+      POSTGRES_HOST: postgres_user
+      POSTGRES_PORT: "5432"
+      REDIS_URL: redis://redis:6379/1
+      AUTH_SERVICE_URL: http://auth_service:8000
+    depends_on:
+      postgres_user:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      auth_service:
+        condition: service_started
+    networks:
+      - wavechat_net
+    restart: unless-stopped
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py runserver 0.0.0.0:8000"
+
+  chat_service:
+    build: ./services/chat_service
+    container_name: wavechat_chat
+    environment:
+      SECRET_KEY: ${SECRET_KEY}
+      DEBUG: "False"
+      POSTGRES_DB: ${CHAT_POSTGRES_DB}
+      POSTGRES_USER: ${CHAT_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${CHAT_POSTGRES_PASSWORD}
+      POSTGRES_HOST: postgres_chat
+      POSTGRES_PORT: "5432"
+      REDIS_URL: redis://redis:6379/2
+      AUTH_SERVICE_URL: http://auth_service:8000
+      USER_SERVICE_URL: http://user_service:8000
+    depends_on:
+      postgres_chat:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      auth_service:
+        condition: service_started
+    networks:
+      - wavechat_net
+    restart: unless-stopped
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             daphne -b 0.0.0.0 -p 8000 chat_service.asgi:application"
+
+  media_service:
+    build: ./services/media_service
+    container_name: wavechat_media
+    environment:
+      AUTH_SERVICE_URL: http://auth_service:8000
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+      MINIO_USE_SSL: "False"
+      MINIO_PUBLIC_BASE: ${MINIO_PUBLIC_BASE}
+    depends_on:
+      minio:
+        condition: service_healthy
+      auth_service:
+        condition: service_started
+    networks:
+      - wavechat_net
+    restart: unless-stopped
+
+  notification_service:
+    build: ./services/notification_service
+    container_name: wavechat_notification
+    environment:
+      REDIS_URL: redis://redis:6379/4
+      AUTH_SERVICE_URL: http://auth_service:8000
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - wavechat_net
+    restart: unless-stopped
+
+  celery_worker:
+    build: ./services/notification_service
+    container_name: wavechat_celery
+    command: celery -A celery_app worker --loglevel=info --pool=solo
+    environment:
+      REDIS_URL: redis://redis:6379/4
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - wavechat_net
+    restart: unless-stopped
+
+  redis_listener:
+    build: ./services/notification_service
+    container_name: wavechat_listener
+    command: python listener.py
+    environment:
+      REDIS_URL: redis://redis:6379/4
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - wavechat_net
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    container_name: wavechat_nginx
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+    depends_on:
+      - auth_service
+      - user_service
+      - chat_service
+      - media_service
+      - notification_service
+    networks:
+      - wavechat_net
+    restart: unless-stopped
+
+volumes:
+  auth_pg_data:
+  user_pg_data:
+  chat_pg_data:
+  redis_data:
+  minio_data:
+
+networks:
+  wavechat_net:
+    driver: bridge
