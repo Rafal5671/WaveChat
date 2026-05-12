@@ -16,7 +16,11 @@ services:
       - wavechat_net
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${AUTH_POSTGRES_USER}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${AUTH_POSTGRES_USER} -d ${AUTH_POSTGRES_DB}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -34,7 +38,11 @@ services:
       - wavechat_net
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${USER_POSTGRES_USER}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${USER_POSTGRES_USER} -d ${USER_POSTGRES_DB}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -52,7 +60,11 @@ services:
       - wavechat_net
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${CHAT_POSTGRES_USER}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${CHAT_POSTGRES_USER} -d ${CHAT_POSTGRES_DB}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -106,14 +118,25 @@ services:
     networks:
       - wavechat_net
 
+  mailpit:
+    image: axllent/mailpit
+    container_name: wavechat_mailpit
+    ports:
+      - "8025:8025"
+    networks:
+      - wavechat_net
+    restart: unless-stopped
+
   # ─── Application services ────────────────────────────────────
 
   auth_service:
-    build: ./services/auth_service
+    build:
+      context: ./services/auth_service
     container_name: wavechat_auth
+    hostname: authservice
     environment:
       SECRET_KEY: ${SECRET_KEY}
-      DEBUG: "False"
+      DEBUG: "True"
       POSTGRES_DB: ${AUTH_POSTGRES_DB}
       POSTGRES_USER: ${AUTH_POSTGRES_USER}
       POSTGRES_PASSWORD: ${AUTH_POSTGRES_PASSWORD}
@@ -137,18 +160,20 @@ services:
              python manage.py runserver 0.0.0.0:8000"
 
   user_service:
-    build: ./services/user_service
+    build:
+      context: ./services/user_service
     container_name: wavechat_user
+    hostname: userservice
     environment:
       SECRET_KEY: ${SECRET_KEY}
-      DEBUG: "False"
+      DEBUG: "True"
       POSTGRES_DB: ${USER_POSTGRES_DB}
       POSTGRES_USER: ${USER_POSTGRES_USER}
       POSTGRES_PASSWORD: ${USER_POSTGRES_PASSWORD}
       POSTGRES_HOST: postgres_user
       POSTGRES_PORT: "5432"
       REDIS_URL: redis://redis:6379/1
-      AUTH_SERVICE_URL: http://auth_service:8000
+      AUTH_SERVICE_URL: http://authservice:8000
     depends_on:
       postgres_user:
         condition: service_healthy
@@ -164,19 +189,21 @@ services:
              python manage.py runserver 0.0.0.0:8000"
 
   chat_service:
-    build: ./services/chat_service
+    build:
+      context: ./services/chat_service
     container_name: wavechat_chat
+    hostname: chatservice
     environment:
       SECRET_KEY: ${SECRET_KEY}
-      DEBUG: "False"
+      DEBUG: "True"
       POSTGRES_DB: ${CHAT_POSTGRES_DB}
       POSTGRES_USER: ${CHAT_POSTGRES_USER}
       POSTGRES_PASSWORD: ${CHAT_POSTGRES_PASSWORD}
       POSTGRES_HOST: postgres_chat
       POSTGRES_PORT: "5432"
       REDIS_URL: redis://redis:6379/2
-      AUTH_SERVICE_URL: http://auth_service:8000
-      USER_SERVICE_URL: http://user_service:8000
+      AUTH_SERVICE_URL: http://authservice:8000
+      USER_SERVICE_URL: http://userservice:8000
     depends_on:
       postgres_chat:
         condition: service_healthy
@@ -192,10 +219,12 @@ services:
              daphne -b 0.0.0.0 -p 8000 chat_service.asgi:application"
 
   media_service:
-    build: ./services/media_service
+    build:
+      context: ./services/media_service
     container_name: wavechat_media
+    hostname: mediaservice
     environment:
-      AUTH_SERVICE_URL: http://auth_service:8000
+      AUTH_SERVICE_URL: http://authservice:8000
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
@@ -212,11 +241,13 @@ services:
     restart: unless-stopped
 
   notification_service:
-    build: ./services/notification_service
+    build:
+      context: ./services/notification_service
     container_name: wavechat_notification
+    hostname: notificationservice
     environment:
       REDIS_URL: redis://redis:6379/4
-      AUTH_SERVICE_URL: http://auth_service:8000
+      AUTH_SERVICE_URL: http://authservice:8000
     depends_on:
       redis:
         condition: service_healthy
@@ -225,7 +256,8 @@ services:
     restart: unless-stopped
 
   celery_worker:
-    build: ./services/notification_service
+    build:
+      context: ./services/notification_service
     container_name: wavechat_celery
     command: celery -A celery_app worker --loglevel=info --pool=solo
     environment:
@@ -238,7 +270,8 @@ services:
     restart: unless-stopped
 
   redis_listener:
-    build: ./services/notification_service
+    build:
+      context: ./services/notification_service
     container_name: wavechat_listener
     command: python listener.py
     environment:
@@ -250,6 +283,23 @@ services:
       - wavechat_net
     restart: unless-stopped
 
+  # ─── Frontend ─────────────────────────────────────────────────
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: wavechat_frontend
+    hostname: frontend
+    networks:
+      - wavechat_net
+    restart: unless-stopped
+    depends_on:
+      - auth_service
+      - user_service
+      - chat_service
+
+  # ─── Reverse proxy ────────────────────────────────────────────
+
   nginx:
     image: nginx:alpine
     container_name: wavechat_nginx
@@ -258,6 +308,7 @@ services:
     ports:
       - "80:80"
     depends_on:
+      - frontend
       - auth_service
       - user_service
       - chat_service
